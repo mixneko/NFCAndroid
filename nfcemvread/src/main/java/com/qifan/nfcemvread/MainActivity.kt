@@ -13,7 +13,6 @@ import android.widget.ProgressBar
 import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
-import com.pro100svitlo.creditCardNfcReader.utils.CardNfcUtils
 import com.qifan.nfcemvread.extensions.TextRecord
 import com.qifan.nfcemvread.extensions.formattedCardNumber
 import com.qifan.nfcemvread.extensions.longShowSnackBar
@@ -21,7 +20,6 @@ import com.qifan.nfcemvread.extensions.longShowSnackBar
 class MainActivity : AppCompatActivity(), MyCardNfcAsyncTask.MyCardNfcInterface {
 
     private var mNfcAdapter: NfcAdapter? = null
-    private var mCardNfcUtils: CardNfcUtils? = null
     private var mCardNfcAsyncTask: MyCardNfcAsyncTask? = null
     private var mIntentFromCreate: Boolean = false
     private lateinit var mPendingIntent: PendingIntent
@@ -46,18 +44,10 @@ class MainActivity : AppCompatActivity(), MyCardNfcAsyncTask.MyCardNfcInterface 
         mCardType = findViewById(R.id.iv_cardType)
         mCardContainer = findViewById(R.id.ll_cardContainer)
         mNfcAdapter = NfcAdapter.getDefaultAdapter(this)
+        mPendingIntent = createPendingIntent()
 
         createProgressbar()
         if (checkNFCEnable()) {
-            if (Build.VERSION.SDK_INT <= 30) {
-                // plugin is deprecated and crashes on android 12> because pending intent isn't set to
-                // PendingIntent.FLAG_IMMUTABLE
-                // e.g PendingIntent.getActivity(context, 0, intent, PendingIntent.FLAG_IMMUTABLE)
-                // replace https://github.com/pro100svitlo/Credit-Card-NFC-Reader
-                // with
-                // https://github.com/devnied/EMV-NFC-Paycard-Enrollment
-                mCardNfcUtils = CardNfcUtils(this)
-            }
             mIntentFromCreate = true
             readNFCInfo()
         } else {
@@ -70,25 +60,22 @@ class MainActivity : AppCompatActivity(), MyCardNfcAsyncTask.MyCardNfcInterface 
         mProgressBar.isIndeterminate = true
     }
 
-    override fun onStart() {
-        super.onStart()
-//        mPendingIntent = PendingIntent.getActivity(this, 0, Intent(this, javaClass), 0)
+    private fun createPendingIntent(): PendingIntent {
+        val intent = Intent(this, javaClass).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        // The NFC system adds the tag to this intent, so it has to be mutable on Android 12+.
+        val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) PendingIntent.FLAG_MUTABLE else 0
+        return PendingIntent.getActivity(this, 0, intent, flags)
     }
 
     override fun onResume() {
         super.onResume()
         mIntentFromCreate = false
-        if (mNfcAdapter != null) {
-            mCardNfcUtils?.enableDispatch()
-        }
-//        mNfcAdapter?.enableForegroundDispatch(this, mPendingIntent, null, null)
+        mNfcAdapter?.enableForegroundDispatch(this, mPendingIntent, null, null)
     }
 
     override fun onPause() {
         super.onPause()
-        if (mNfcAdapter != null) {
-            mCardNfcUtils?.disableDispatch()
-        }
+        mNfcAdapter?.disableForegroundDispatch(this)
     }
 
     private fun readNFCInfo() {
@@ -113,7 +100,7 @@ class MainActivity : AppCompatActivity(), MyCardNfcAsyncTask.MyCardNfcInterface 
             intent.getParcelableArrayExtra(NfcAdapter.EXTRA_NDEF_MESSAGES)?.also { rawMessages ->
                 val messages: List<NdefMessage> = rawMessages.map { it as NdefMessage }
                 // Process the messages array.
-                messages.forEach { message ->
+                for (message in messages) {
                     message.records.forEach { record ->
                         mNFCStatusTextView.text = TextRecord.parse(record).text
                     }

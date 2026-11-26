@@ -7,15 +7,17 @@ import android.nfc.tech.IsoDep;
 import android.os.AsyncTask;
 import android.util.Log;
 
-import com.google.firebase.crashlytics.buildtools.reloc.org.apache.commons.io.IOUtils;
-import com.pro100svitlo.creditCardNfcReader.enums.EmvCardScheme;
-import com.pro100svitlo.creditCardNfcReader.model.EmvCard;
-import com.pro100svitlo.creditCardNfcReader.parser.EmvParser;
-import com.pro100svitlo.creditCardNfcReader.utils.Provider;
+import com.github.devnied.emvnfccard.enums.EmvCardScheme;
+import com.github.devnied.emvnfccard.model.EmvCard;
+import com.github.devnied.emvnfccard.model.enums.CardStateEnum;
+import com.github.devnied.emvnfccard.parser.EmvTemplate;
 
 import org.apache.commons.lang3.StringUtils;
 
 import java.io.IOException;
+import java.text.SimpleDateFormat;
+import java.util.Date;
+import java.util.Locale;
 
 /**
  * Created by Qifan on 27/11/2018.
@@ -53,47 +55,12 @@ public class MyCardNfcAsyncTask extends AsyncTask<Void, Void, Object> {
         void finishNfcReadCard();
     }
 
-    public final static String CARD_UNKNOWN = EmvCardScheme.UNKNOWN.toString();
-    public final static String CARD_VISA = EmvCardScheme.VISA.toString();
-    public final static String CARD_NAB_VISA = EmvCardScheme.NAB_VISA.toString();
-    public final static String CARD_MASTER_CARD = EmvCardScheme.MASTER_CARD.toString();
-    public final static String CARD_AMERICAN_EXPRESS = EmvCardScheme.AMERICAN_EXPRESS.toString();
-    public final static String CARD_CB = EmvCardScheme.CB.toString();
-    public final static String CARD_LINK = EmvCardScheme.LINK.toString();
-    public final static String CARD_JCB = EmvCardScheme.JCB.toString();
-    public final static String CARD_DANKORT = EmvCardScheme.DANKORT.toString();
-    public final static String CARD_COGEBAN = EmvCardScheme.COGEBAN.toString();
-    public final static String CARD_DISCOVER = EmvCardScheme.DISCOVER.toString();
-    public final static String CARD_BANRISUL = EmvCardScheme.BANRISUL.toString();
-    public final static String CARD_SPAN = EmvCardScheme.SPAN.toString();
-    public final static String CARD_INTERAC = EmvCardScheme.INTERAC.toString();
-    public final static String CARD_ZIP = EmvCardScheme.ZIP.toString();
-    public final static String CARD_UNIONPAY = EmvCardScheme.UNIONPAY.toString();
-    public final static String CARD_EAPS = EmvCardScheme.EAPS.toString();
-    public final static String CARD_VERVE = EmvCardScheme.VERVE.toString();
-    public final static String CARD_TENN = EmvCardScheme.TENN.toString();
-    public final static String CARD_RUPAY = EmvCardScheme.RUPAY.toString();
-    public final static String CARD_ПРО100 = EmvCardScheme.ПРО100.toString();
-    public final static String CARD_ZKA = EmvCardScheme.ZKA.toString();
-    public final static String CARD_BANKAXEPT = EmvCardScheme.BANKAXEPT.toString();
-    public final static String CARD_BRADESCO = EmvCardScheme.BRADESCO.toString();
-    public final static String CARD_MIDLAND = EmvCardScheme.MIDLAND.toString();
-    public final static String CARD_PBS = EmvCardScheme.PBS.toString();
-    public final static String CARD_ETRANZACT = EmvCardScheme.ETRANZACT.toString();
-    public final static String CARD_GOOGLE = EmvCardScheme.GOOGLE.toString();
-    public final static String CARD_INTER_SWITCH = EmvCardScheme.INTER_SWITCH.toString();
+    public final static String CARD_UNKNOWN = "UNKNOWN";
+    public final static String CARD_VISA = EmvCardScheme.VISA.name();
+    public final static String CARD_MASTER_CARD = EmvCardScheme.MASTER_CARD.name();
 
     private final static String NFC_A_TAG = "TAG: Tech [android.nfc.tech.IsoDep, android.nfc.tech.NfcA]";
     private final static String NFC_B_TAG = "TAG: Tech [android.nfc.tech.IsoDep, android.nfc.tech.NfcB]";
-    private final String UNKNOWN_CARD_MESS =
-            "===========================================================================\n\n" +
-                    "Hi! This library is not familiar with your credit card. \n " +
-                    "Please, write me an email with information of your bank: \n" +
-                    "country, bank name, card type, etc) and i will try to do my best, \n" +
-                    "to add your bank as a known one into this lib. \n" +
-                    "Great thanks for using and reporting!!! \n" +
-                    "===========================================================================";
-    private Provider mProvider = new Provider();
     private boolean mException;
     private EmvCard mCard;
     private MyCardNfcInterface mInterface;
@@ -148,7 +115,6 @@ public class MyCardNfcAsyncTask extends AsyncTask<Void, Void, Object> {
     protected void onPreExecute() {
         super.onPreExecute();
         mInterface.startNfcReadCard();
-        mProvider.getLog().setLength(0);
     }
 
     @Override
@@ -171,16 +137,15 @@ public class MyCardNfcAsyncTask extends AsyncTask<Void, Void, Object> {
             if (mCard != null) {
                 if (StringUtils.isNotBlank(mCard.getCardNumber())) {
                     mCardNumber = mCard.getCardNumber();
-                    mExpireDate = mCard.getExpireDate();
-                    mCardType = mCard.getType().toString();
+                    mExpireDate = formatExpireDate(mCard.getExpireDate());
+                    mCardType = mCard.getType() == null ? CARD_UNKNOWN : mCard.getType().name();
                     mCardHolderFirstName = mCard.getHolderFirstname();
                     mCardHolderLastName = mCard.getHolderLastname();
-                    if (mCardType.equals(EmvCardScheme.UNKNOWN.toString())) {
-                        Log.d("creditCardNfcReader", UNKNOWN_CARD_MESS);
-                    }
                     mInterface.cardIsReadyToRead();
-                } else if (mCard.isNfcLocked()) {
+                } else if (mCard.getState() == CardStateEnum.LOCKED) {
                     mInterface.cardWithLockedNfc();
+                } else {
+                    mInterface.unknownEmvCard();
                 }
             } else {
                 mInterface.unknownEmvCard();
@@ -195,29 +160,35 @@ public class MyCardNfcAsyncTask extends AsyncTask<Void, Void, Object> {
     private void doInBackground() {
         IsoDep mIsoDep = IsoDep.get(mTag);
         if (mIsoDep == null) {
-            mInterface.doNotMoveCardSoFast();
+            mException = true;
             return;
         }
         mException = false;
 
-        try {
+        // Closing the IsoDep ends the connection to the card.
+        try (IsoDep isoDep = mIsoDep) {
             // Open connection
-            mIsoDep.connect();
+            isoDep.connect();
 
-            mProvider.setmTagCom(mIsoDep);
-
-            EmvParser parser = new EmvParser(mProvider, true);
+            EmvTemplate parser = EmvTemplate.Builder()
+                    .setProvider(new IsoDepProvider(isoDep))
+                    .setConfig(EmvTemplate.Config()
+                            .setContactLess(true)
+                            .setReadTransactions(false)
+                            .setReadAt(false))
+                    .build();
             mCard = parser.readEmvCard();
         } catch (IOException e) {
             mException = true;
-        } finally {
-            IOUtils.closeQuietly(mIsoDep);
         }
+    }
+
+    private static String formatExpireDate(Date date) {
+        return date == null ? null : new SimpleDateFormat("MM/yy", Locale.US).format(date);
     }
 
     private void clearAll() {
         mInterface = null;
-        mProvider = null;
         mCard = null;
         mTag = null;
         mCardNumber = null;
