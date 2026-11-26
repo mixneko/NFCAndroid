@@ -7,6 +7,7 @@ import android.nfc.NfcAdapter
 import android.os.Build
 import android.os.Bundle
 import android.view.View
+import android.view.WindowManager
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ProgressBar
@@ -14,8 +15,8 @@ import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import com.qifan.nfcemvread.extensions.TextRecord
-import com.qifan.nfcemvread.extensions.formattedCardNumber
 import com.qifan.nfcemvread.extensions.longShowSnackBar
+import com.qifan.nfcemvread.extensions.maskedCardNumber
 
 class MainActivity : AppCompatActivity(), MyCardNfcAsyncTask.MyCardNfcInterface {
 
@@ -36,6 +37,8 @@ class MainActivity : AppCompatActivity(), MyCardNfcAsyncTask.MyCardNfcInterface 
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Card data is on screen: block screenshots and the recent apps preview.
+        window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         setContentView(R.layout.activity_main)
         mNFCStatusTextView = findViewById(R.id.tv_result_nfc)
         mCardNumber = findViewById(R.id.tv_cardNumber)
@@ -152,10 +155,13 @@ class MainActivity : AppCompatActivity(), MyCardNfcAsyncTask.MyCardNfcInterface 
         mNFCStatusTextView.visibility = View.GONE
         mProgressBar.visibility = View.GONE
         mCardContainer.visibility = View.VISIBLE
-        val cardNumber = formattedCardNumber(mCardNfcAsyncTask?.cardNumber)
+        val cardNumber = maskedCardNumber(mCardNfcAsyncTask?.cardNumber)
         val expirationDate = mCardNfcAsyncTask?.cardExpireDate
-        val holderName =
-            mCardNfcAsyncTask?.cardHolderFirstName + mCardNfcAsyncTask?.cardHolderLastName
+        // Contactless cards often omit the holder name.
+        val holderName = listOfNotNull(
+            mCardNfcAsyncTask?.cardHolderFirstName,
+            mCardNfcAsyncTask?.cardHolderLastName,
+        ).joinToString(" ")
         val cardType = mCardNfcAsyncTask?.cardType
         mCardNumber.text = cardNumber
         mCardExpirationDate.text = expirationDate

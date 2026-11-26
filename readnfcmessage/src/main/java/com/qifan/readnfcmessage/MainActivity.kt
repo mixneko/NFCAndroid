@@ -8,7 +8,6 @@ import android.os.Build
 import android.os.Bundle
 import android.view.View
 import android.widget.TextView
-import androidx.annotation.RequiresApi
 import androidx.appcompat.app.AppCompatActivity
 import com.qifan.readnfcmessage.parser.NdefMessageParser
 
@@ -17,18 +16,24 @@ class MainActivity : AppCompatActivity() {
     private var mPendingIntent: PendingIntent? = null
     private lateinit var mTvView: TextView
 
-    @RequiresApi(Build.VERSION_CODES.M)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
         initView()
         mNfcAdapter = NfcAdapter.getDefaultAdapter(this)
-        if (checkNFCEnable()) {
-            mPendingIntent =
-                PendingIntent.getActivity(this, 0, intent, PendingIntent.FLAG_IMMUTABLE)
-        } else {
+        mPendingIntent = createPendingIntent()
+        if (!checkNFCEnable()) {
             mTvView.text = getString(R.string.tv_noNfc)
         }
+        // The app may have been started by a tag.
+        readMessages(intent)
+    }
+
+    private fun createPendingIntent(): PendingIntent {
+        val intent = Intent(this, javaClass).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        // The NFC system adds the tag to this intent, so it has to be mutable on Android 12+.
+        val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) PendingIntent.FLAG_MUTABLE else 0
+        return PendingIntent.getActivity(this, 0, intent, flags)
     }
 
     override fun onResume() {
@@ -43,12 +48,15 @@ class MainActivity : AppCompatActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        if (NfcAdapter.ACTION_NDEF_DISCOVERED == intent.action) {
-            intent.getParcelableArrayExtra(NfcAdapter.EXTRA_NDEF_MESSAGES)?.also { rawMessages ->
-                val messages: List<NdefMessage> = rawMessages.map { it as NdefMessage }
-                // Process the messages array.
-                parserNDEFMessage(messages)
-            }
+        readMessages(intent)
+    }
+
+    // Foreground dispatch reports ACTION_TAG_DISCOVERED, so rely on the extra, not the action.
+    private fun readMessages(intent: Intent) {
+        intent.getParcelableArrayExtra(NfcAdapter.EXTRA_NDEF_MESSAGES)?.also { rawMessages ->
+            val messages: List<NdefMessage> = rawMessages.map { it as NdefMessage }
+            // Process the messages array.
+            if (messages.isNotEmpty()) parserNDEFMessage(messages)
         }
     }
 
